@@ -1,6 +1,5 @@
 ﻿[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-
 function Write-DecoratedString {
     param (
         [Parameter(Mandatory=$true)]
@@ -13,313 +12,450 @@ function Write-DecoratedString {
     Write-Output ('*' * $InputString.Length)
     Write-Output $InputString
     Write-Output ('*' * $InputString.Length)
+}
+
+function Get-ComputerNameAndDate {
+    $compname = $env:computername
+    $Today = Get-Date -Format "dd.mm.yyyy"
+    Write-DecoratedString -InputString "Check all the stuff script for $compname"
+    Get-Date
+}
+
+function Change-WorkingDirectoryAndCreateOutputFolder {
+    c:
+    cd\
+    $path = "$env:TEMP"
+    If (!(Test-Path $path)) {
+        New-Item -ItemType Directory -Force -Path $path
+    }
+}
+
+function Check-LastBootTime {
+    Write-DecoratedString -InputString "Last boot time"
+    Get-CimInstance -ClassName Win32_OperatingSystem | Select -Exp LastBootUpTime
+}
+
+function Check-DriverIssues {
+    [CmdletBinding()]
+    param ()
+    Write-DecoratedString -InputString "Checking for driver issues..."
     
-}
-
-# get the computername and date so it can be part of the output file
-$compname = $env:computername
-$Today = get-date -Format "dd.mm.yyyy"
-# change working directory and create output folder
-c:
-cd\
-$path = "$env:TEMP"
-If(!(test-path $path))
-{
-      New-Item -ItemType Directory -Force -Path $path
-}
-
-Write-Output ("Check all the stuff script")
-Write-Output ($compname)
-Get-Date
-
-# Check Last Boot Time
-Write-DecoratedString -InputString "Last boot time"
-Get-CimInstance -ClassName Win32_OperatingSystem | Select -Exp LastBootUpTime
-
-
-# Check for driver issues
-Write-DecoratedString -InputString "Checking for driver issues"
-Write-Output ("Result:")
-$DeviceState = Get-WmiObject -Class Win32_PnpEntity -ComputerName localhost -Namespace Root\CIMV2 | Where-Object {$_.ConfigManagerErrorCode -gt 0
-}
-
-$DevicesInError = foreach($Device in $DeviceState){
- $Errortext = switch($device.ConfigManagerErrorCode){
-0 {"This device is working properly."}
-1 {"This device is not configured correctly."}
-2 {"Windows cannot load the driver for this device."}
-3 {"The driver for this device might be corrupted, or your system may be running low on memory or other resources."}
-4 {"This device is not working properly. One of its drivers or your registry might be corrupted."}
-5 {"The driver for this device needs a resource that Windows cannot manage."}
-6 {"The boot configuration for this device conflicts with other devices."}
-7 {"Cannot filter."}
-8 {"The driver loader for the device is missing."}
-9 {"This device is not working properly because the controlling firmware is reporting the resources for the device incorrectly."}
-10 {"This device cannot start."}
-11 {"This device failed."}
-12 {"This device cannot find enough free resources that it can use."}
-13 {"Windows cannot verify this device's resources."}
-14 {"This device cannot work properly until you restart your computer."}
-15 {"This device is not working properly because there is probably a re-enumeration problem."}
-16 {"Windows cannot identify all the resources this device uses."}
-17 {"This device is asking for an unknown resource type."}
-18 {"Reinstall the drivers for this device."}
-19 {"Failure using the VxD loader."}
-20 {"Your registry might be corrupted."}
-21 {"System failure: Try changing the driver for this device. If that does not work, see your hardware documentation. Windows is removing this device."}
-22 {"This device is disabled."}
-23 {"System failure: Try changing the driver for this device. If that doesn't work, see your hardware documentation."}
-24 {"This device is not present, is not working properly, or does not have all its drivers installed."}
-25 {"Windows is still setting up this device."}
-26 {"Windows is still setting up this device."}
-27 {"This device does not have valid log configuration."}
-28 {"The drivers for this device are not installed."}
-29 {"This device is disabled because the firmware of the device did not give it the required resources."}
-30 {"This device is using an Interrupt Request (IRQ) resource that another device is using."}
-31 {"This device is not working properly because Windows cannot load the drivers required for this device."}
-}
-[PSCustomObject]@{
-ErrorCode = $device.ConfigManagerErrorCode
-ErrorText = $Errortext
-Device = $device.Caption
-Present = $device.Present
-Status = $device.Status
-StatusInfo = $device.StatusInfo
-}
-}
-
-if(!$DevicesInError){
-write-host "Healthy. No driver issues detected."
-} else {
-$DevicesInError
-}
-
-
-# Check Last CHKDSK
-Write-DecoratedString -InputString "Last CHKDSK"
-
-try {
-    $eventschkdsk = Get-EventLog -LogName Application -InstanceId 26226 -Source Chkdsk -ErrorAction Stop
-    if ($eventschkdsk) {
-        $eventschkdsk | Select-Object -ExpandProperty Message
+    # Retrieve problematic drivers
+    $ProblematicDrivers = Get-WmiObject -Class Win32_PnPEntity | Where-Object { $_.ConfigManagerErrorCode -ne 0 }
+    
+    if ($ProblematicDrivers) {
+        Write-Output "Problematic drivers detected:"
+        $ProblematicDrivers | ForEach-Object {
+            $DriverInfo = [PSCustomObject]@{
+                DeviceName      = $_.Caption
+                DeviceID        = $_.DeviceID
+                Status          = $_.Status
+                ErrorCode       = $_.ConfigManagerErrorCode
+                ErrorDescription = ""
+            }
+            
+            # Get a human-readable description of the error code
+            switch ($_.ConfigManagerErrorCode) {
+                1 { $DriverInfo.ErrorDescription = "Device is not configured correctly" }
+                2 { $DriverInfo.ErrorDescription = "Windows cannot load the driver" }
+                3 { $DriverInfo.ErrorDescription = "Driver is missing" }
+                4 { $DriverInfo.ErrorDescription = "Device is not working properly" }
+                5 { $DriverInfo.ErrorDescription = "Windows is still setting up the device" }
+                6 { $DriverInfo.ErrorDescription = "Device does not have valid configuration information" }
+                9 { $DriverInfo.ErrorDescription = "Device registry entry is corrupted" }
+                10 { $DriverInfo.ErrorDescription = "Device cannot start" }
+                12 { $DriverInfo.ErrorDescription = "Device cannot find enough free resources" }
+                14 { $DriverInfo.ErrorDescription = "Device cannot work properly until system is restarted" }
+                15 { $DriverInfo.ErrorDescription = "Device is not working properly due to a possible re-enumeration" }
+                16 { $DriverInfo.ErrorDescription = "Windows cannot identify all the resources of the device" }
+                17 { $DriverInfo.ErrorDescription = "Driver installation is pending" }
+                18 { $DriverInfo.ErrorDescription = "Device has been disabled" }
+                19 { $DriverInfo.ErrorDescription = "Windows cannot start the device" }
+                20 { $DriverInfo.ErrorDescription = "Device failed due to a firmware or driver issue" }
+                21 { $DriverInfo.ErrorDescription = "Device is disabled by the user" }
+                22 { $DriverInfo.ErrorDescription = "Device is not present or not detected" }
+                24 { $DriverInfo.ErrorDescription = "Device is not configured" }
+                28 { $DriverInfo.ErrorDescription = "Device drivers are not installed" }
+                29 { $DriverInfo.ErrorDescription = "Device is disabled because the firmware did not provide the required resources" }
+                30 { $DriverInfo.ErrorDescription = "Device is using an IRQ that is in use by another device" }
+                31 { $DriverInfo.ErrorDescription = "Device is not working properly because Windows cannot load the drivers required for the device" }
+                default { $DriverInfo.ErrorDescription = "Unknown error" }
+            }
+            
+            $DriverInfo
+        } | Format-Table -AutoSize
     } else {
-        Write-Output "No CHKDSK id 26226 in Application Log"
+        Write-Output "No driver issues detected."
     }
-} catch {
-    Write-Output "No CHKDSK id 26226 in Application Log"
 }
 
+function Check-LastChkdsk {
+    param (
+        [int]$Count = 1,
+        [int]$Days = 30
+    )
 
-$eventschkdskwin = Get-Winevent -FilterHashTable @{logname="Application"; id="1001"}| ?{$_.providername –match "wininit"} | fl timecreated, message
-if ($eventschkdskwin) {
-    $eventschkdskwin | Format-Table -AutoSize -Wrap
-} else {
-    Write-Output "No CHKDSK id 1001 in Application Log"
-}
+    $startDate = (Get-Date).AddDays(-$Days)
 
-# Show all wifi profiles and passwords
-# Would be nice to send this to IT Glue
-Write-DecoratedString -InputString "Wifi profiles and passwords"
-(netsh wlan show profiles) | Select-String "\:(.+)$" | %{$name=$_.Matches.Groups[1].Value.Trim(); $_} | %{(netsh wlan show profile name="$name" key=clear)} | Select-String "Key Content\W+\:(.+)$" | %{$pass=$_.Matches.Groups[1].Value.Trim(); $_} | %{[PSCustomObject]@{ PROFILE_NAME=$name;PASSWORD=$pass }} | Format-Table -AutoSize
-
-
-# Would be nice to send this to IT Glue
-Write-DecoratedString -InputString "Why did the system reboot last?"
-$events = Get-WinEvent -FilterHashtable @{logname = 'System'; id = 1074, 6005, 6006, 6008} -MaxEvents 6
-
-if ($events) {
-    $events | Format-Table -Wrap
-} else {
-    Write-Output "No matches found"
-}
-
-
-# Last errors in System Log
-Write-DecoratedString -InputString "Last 32 errors in System Log"
-$events = Get-EventLog -LogName System -EntryType Error -Newest 32
-
-if ($events) {
-    $events | Format-Table -AutoSize -Wrap
-} else {
-    Write-Output "No errors found"
-}
-
-# Last errors in Application Log
-Write-DecoratedString -InputString "Last 32 errors in Application Log"
-$eventsapp =  Get-EventLog -LogName Application -EntryType Error -Newest 32
-if ($eventsapp) {
-    $eventsapp | Format-Table -AutoSize -Wrap
-} else {
-    Write-Output "No errors found"
-}
-
-
-# Any other notable events in the Event Log
-Write-DecoratedString -InputString "Any other notable events in the Event Log"
-try {Get-WinEvent -FilterHashtable @{logname = 'System'; id = 1001, 4740, 4724, 4728,4732,4756, 4724, 4625} -ErrorAction Stop -MaxEvents 24 | Format-Table -wrap
+    try {
+        $ChkdskEvents = Get-WinEvent -FilterHashtable @{
+            LogName   = 'Application';
+            ID        = 26226, 26214;
+            StartTime = $startDate
+        } -ErrorAction SilentlyContinue | Select-Object -First $Count
     }
-catch [Exception] {
-        if ($_.Exception -match "No events were found that match the specified selection criteria") {
-        Write-Output "No events found";
-                 }
+    catch {
+        $ChkdskEvents = $null
     }
 
-# Show BSOD's using BlueScreenView
-Write-DecoratedString -InputString "BSOD's"
-###bluescreen
- $scriptName = "Blue Screen View"
- $computerName = (get-wmiObject win32_computersystem).name
- $computerDomain = (get-wmiObject win32_computersystem).domain
- if($computerdomain -notlike '*.*'){ #if there's no period in the domain, (workgroup)
-	$computerDomain = "$computerDomain.local"	
- }
-  $messageBody = "----Blue Screen View Results----`r`n"
- $url = "http://www.runpcrun.com/files/BlueScreenView.exe"
- $filename = "BlueScreenView.exe"
- $client = New-Object System.Net.WebClient
- $client.DownloadFile($url, "$env:temp\$filename")
- Start-Process -FilePath "$env:temp\$filename" -ArgumentList "/stab","$env:temp\crashes.txt","/sort 2","/sort ~1"""
- Get-Content $env:temp\crashes.txt
+    if ($ChkdskEvents) {
+        Write-DecoratedString -InputString "Last $Count Chkdsk events in the past $Days days"
 
+        foreach ($ChkdskEvent in $ChkdskEvents) {
+            $eventDetails = @{
+                TimeCreated = $ChkdskEvent.TimeCreated;
+                EventID     = $ChkdskEvent.ID;
+                Message     = $ChkdskEvent.Message;
+            }
+
+            $eventDetails.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Name, $_.Value } | Write-Output
+            Write-Output ""
+        }
+    } else {
+        Write-Output "No chkdsk events found in the past $Days days"
+    }
+}
+
+
+function Show-WiFiProfilesAndPasswords {
+    $wifiProfiles = netsh.exe wlan show profiles | Where-Object { $_ -match "User Profile" }
+
+    if ($wifiProfiles) {
+        Write-DecoratedString -InputString "WiFi Profiles and Passwords"
+
+        foreach ($profile in $wifiProfiles) {
+            $profileName = ($profile -split ": ")[-1]
+            $profileKeyMaterial = (netsh.exe wlan show profile name="$profileName" keyMaterial)
+
+            Write-Output "Profile: $profileName"
+            Write-Output "Password: $(($profileKeyMaterial -split "Key Material")[-1].Trim())"
+            Write-Output ""
+        }
+    } else {
+        Write-Output "No WiFi profiles found"
+    }
+}
+
+
+function Get-LastSystemRebootReason {
+    param (
+        [int]$Count = 1
+    )
+
+    $rebootEvents = Get-WinEvent -FilterHashtable @{LogName='System'; ID=1074} | Select-Object -First $Count
+
+    if ($rebootEvents) {
+        Write-DecoratedString -InputString "Last $Count System Reboot Reasons"
+
+        foreach ($rebootEvent in $rebootEvents) {
+            $rebootDetails = @{
+                TimeCreated = $rebootEvent.TimeCreated;
+                ReasonCode  = $rebootEvent.Properties[3].Value;
+                User        = $rebootEvent.Properties[6].Value;
+                Reason      = $rebootEvent.Properties[2].Value;
+                Process     = $rebootEvent.Properties[0].Value;
+                Comment     = $rebootEvent.Properties[5].Value;
+            }
+
+            $rebootDetails.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Name, $_.Value } | Write-Output
+            Write-Output ""
+        }
+    } else {
+        Write-Output "No reboot events found"
+    }
+}
+
+
+
+
+    
+function Get-LastErrorsInLog {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$LogName,
+
+        [Parameter(Mandatory = $false)]
+        [int]$NumberOfErrors = 32,
+
+        [Parameter(Mandatory = $false)]
+        [string]$EntryType = 'Error'
+    )
+
+    Write-DecoratedString -InputString "Last $($NumberOfErrors) $($EntryType) events in $($LogName) Log"
+    $events = Get-EventLog -LogName $LogName -EntryType $EntryType -Newest $NumberOfErrors
+
+    if ($events) {
+        $events | Format-Table -AutoSize -Wrap
+    } else {
+        Write-Output "No $($EntryType) events found"
+    }
+}
+
+
+
+function Show-BSODs {
+    param (
+        [Parameter(Mandatory = $false)]
+        [int]$NumberOfEvents = 5
+    )
+
+    $minidumpPath = "$($env:windir)\Minidump"
+    Write-DecoratedString -InputString "Showing $($NumberOfEvents) most recent BSOD minidump files:"
+    if (Test-Path -Path $minidumpPath) {
+        $minidumpFiles = Get-ChildItem -Path $minidumpPath -Filter "*.dmp"
+        $minidumpCount = $minidumpFiles.Count
+
+        if ($minidumpCount -gt 0) {
+            
+            
+            $minidumpFiles |
+                Sort-Object -Property LastWriteTime -Descending |
+                Select-Object -First $NumberOfEvents |
+                Format-Table -Property Name, Length, LastWriteTime -AutoSize -Wrap
+
+        } else {
+            Write-Output "No minidump files found in $($minidumpPath)"
+        }
+    } else {
+        Write-Output "Minidump folder not found at $($minidumpPath)"
+    }
+}
 
 # Pending Patches
-Write-DecoratedString -InputString "Patches Pending"
-$UpdateSession = New-Object -ComObject Microsoft.Update.Session
-$UpdateSearcher = $UpdateSession.CreateupdateSearcher()
-$Updates = @($UpdateSearcher.Search("IsHidden=0 and IsInstalled=0").Updates)
-$Updates | Select-Object Title
+function Get-PendingPatches {
+    if (Get-Command -Name "Get-HotFix" -ErrorAction SilentlyContinue) {
+        $hotfixes = Get-HotFix | Sort-Object -Property InstalledOn -Descending
 
+        if ($hotfixes) {
+            Write-DecoratedString -InputString "Pending Patches"
 
-
-# Is a Reboot Pending?
-Write-DecoratedString -InputString "Is a Reboot Pending? (and why)"
-$ErrorActionPreference = 'Stop'
-
-function Test-RegistryKey {
-    [CmdletBinding()]
-    param
-    (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$Key
-    )
-
-    if (Get-Item -Path $Key -ErrorAction Ignore) {
-        $true
-    }
-}
-
-function Test-RegistryValue {
-    [CmdletBinding()]
-    param
-    (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$Key,
-
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$Value
-    )
-
-    if (Get-ItemProperty -Path $Key -Name $Value -ErrorAction Ignore) {
-        $true
-    }
-}
-
-function Test-RegistryValueNotNull {
-    [CmdletBinding()]
-    param
-    (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$Key,
-
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$Value
-    )
-
-    if (($regVal = Get-ItemProperty -Path $Key -Name $Value -ErrorAction Ignore) -and $regVal.($Value)) {
-        $true
-    }
-}
-
-    $tests = @(
-        { Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending' }
-        { Test-RegistryKey -Key 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootInProgress' }
-        { Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' }
-        { Test-RegistryKey -Key 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\PackagesPending' }
-        { Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\PostRebootReporting' }
-        { Test-RegistryValueNotNull -Key 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Value 'PendingFileRenameOperations' }
-        { Test-RegistryValueNotNull -Key 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Value 'PendingFileRenameOperations2' }
-        { (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Updates' -Name 'UpdateExeVolatile' | Select-Object -ExpandProperty UpdateExeVolatile) -ne 0 }
-        { Test-RegistryValue -Key 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -Value 'DVDRebootSignal' }
-        { Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttemps' }
-        { Test-RegistryValue -Key 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Value 'JoinDomain' }
-        { Test-RegistryValue -Key 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Value 'AvoidSpnSet' }
-        {
-            (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName').ComputerName -ne
-            (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName').ComputerName
+            $hotfixes | Format-Table -Property HotFixID, Description, InstalledOn -AutoSize -Wrap
+        } else {
+            Write-Output "No pending patches found"
         }
-        {
-            if (Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Services\Pending') {
-                $true
-            }
-        }
-    )
-
-$isPendingReboot = $false
-
-Write-Output "Pending Reboot"
-
-foreach ($test in $tests) {
-    if (& $test) {
-        Write-Output $test
-        $isPendingReboot = $true
-        break
+    } else {
+        Write-Output "Get-HotFix command not available on this system"
     }
 }
 
-[pscustomobject]@{
-    ComputerName    = $env:COMPUTERNAME
-    IsPendingReboot = $isPendingReboot
+
+function Check-RebootPending {
+    [CmdletBinding()]
+    param ()
+    Write-DecoratedString -InputString "Pending Reboot?"
+    
+    $RebootPending = $false
+
+    # Helper function to test the existence of a registry value
+    function Test-RegistryValue {
+        param (
+            [Parameter(Mandatory = $true)]
+            [string]$Key,
+            [Parameter(Mandatory = $true)]
+            [string]$Value
+        )
+
+        try {
+            $RegKey = Get-ItemProperty -Path $Key -ErrorAction Stop
+            return $RegKey.$Value -ne $null
+        } catch {
+            return $false
+        }
+    }
+
+    # Helper function to test the existence of a registry key
+    function Test-RegistryKey {
+        param (
+            [Parameter(Mandatory = $true)]
+            [string]$Key
+        )
+
+        try {
+            Get-Item -Path $Key -ErrorAction Stop | Out-Null
+            return $true
+        } catch {
+            return $false
+        }
+    }
+
+    # Check if pending file rename operations are present in the registry
+    $PendingFileRenameOperations = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+    if ($PendingFileRenameOperations -and $PendingFileRenameOperations.PendingFileRenameOperations) {
+        Write-Output "Pending file rename operations detected."
+        $RebootPending = $true
+    }
+
+    # Check if Windows Update has a pending reboot
+    $WindowsUpdateRebootPending = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update' -Name RebootRequired -ErrorAction SilentlyContinue
+    if ($WindowsUpdateRebootPending -and $WindowsUpdateRebootPending.RebootRequired) {
+        Write-Output "Windows Update requires a reboot."
+        $RebootPending = $true
+    }
+
+    # Check if Component-Based Servicing has a pending reboot
+    $CBSRebootPending = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing' -Name RebootPending -ErrorAction SilentlyContinue
+    if ($CBSRebootPending -and $CBSRebootPending.RebootPending) {
+        Write-Output "Component-Based Servicing requires a reboot."
+        $RebootPending = $true
+    }
+
+    # Check other registry keys and values related to pending reboots
+    if ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Updates' -Name 'UpdateExeVolatile' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty UpdateExeVolatile) -ne 0) {
+        Write-Output "UpdateExeVolatile registry value indicates a pending reboot."
+        $RebootPending = $true
+    }
+
+    if (Test-RegistryValue -Key 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -Value 'DVDRebootSignal') {
+        Write-Output "DVDRebootSignal registry value detected."
+        $RebootPending = $true
+    }
+
+    if (Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttempts') {
+        Write-Output "CurrentRebootAttempts registry key detected."
+        $RebootPending = $true
+    }
+
+    if (Test-RegistryValue -Key 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Value 'JoinDomain') {
+        Write-Output "JoinDomain registry value detected."
+        $RebootPending = $true
+    }
+
+    if (Test-RegistryValue -Key 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon' -Value 'AvoidSpnSet') {
+        Write-Output "AvoidSpnSet registry value detected."
+        $RebootPending = $true
+    }
+
+    if ((Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName').ComputerName -ne
+        (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName').ComputerName) {
+        Write-Output "ActiveComputerName and ComputerName registry values do not match."
+        $RebootPending = $true
+    }
+
+    if (Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Services\Pending') {
+        Write-Output "Pending Windows Update services detected."
+        $RebootPending = $true
+    }
+
+    return $RebootPending
 }
 
-# Programs installed in the last week
-Write-DecoratedString -InputString "Programs installed in the last week"
 
-$currentDate = Get-Date
-$weekAgo = $currentDate.AddDays(-7)
-# Get the list of installed programs from the registry
-$installedPrograms = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* `
-    -ErrorAction SilentlyContinue `
-    | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate
-# Filter the programs installed in the last week
-$recentlyInstalledPrograms = $installedPrograms | Where-Object {
-    $_.InstallDate -ne $null -and `
-    [datetime]::ParseExact($_.InstallDate, "yyyyMMdd", $null) -ge $weekAgo
+
+
+function Check-HighUsage {
+    param (
+        [Parameter(Mandatory = $false)]
+        [double]$CpuThreshold = 90,
+
+        [Parameter(Mandatory = $false)]
+        [double]$MemoryThreshold = 90
+    )
+    Write-DecoratedString -InputString "High CPU & RAM usage"
+    $HighUsage = $false
+
+    $CpuLoad = (Get-WmiObject -Query "SELECT LoadPercentage FROM Win32_Processor" | Measure-Object -Property LoadPercentage -Average).Average
+    if ($CpuLoad -ge $CpuThreshold) {
+        Write-Output "High CPU usage detected: $($CpuLoad)%"
+        $HighUsage = $true
+    }
+
+    $TotalMemory = (Get-WmiObject -Query "SELECT TotalVisibleMemorySize FROM Win32_OperatingSystem").TotalVisibleMemorySize
+    $FreeMemory = (Get-WmiObject -Query "SELECT FreePhysicalMemory FROM Win32_OperatingSystem").FreePhysicalMemory
+    $UsedMemoryPercentage = (($TotalMemory - $FreeMemory) / $TotalMemory) * 100
+
+    if ($UsedMemoryPercentage -ge $MemoryThreshold) {
+        Write-Output "High RAM usage detected: $($UsedMemoryPercentage)%"
+        $HighUsage = $true
+    }
+
+    return $HighUsage
 }
-# Display the recently installed programs
-if ($recentlyInstalledPrograms -ne $null) {
-    Write-Host "Programs installed in the last week:" -ForegroundColor Green
-    $recentlyInstalledPrograms | Format-Table -AutoSize
-} else {
-    Write-Host "No programs were installed in the last week." -ForegroundColor Yellow
+
+function Monitors-Plugged-In {
+Write-DecoratedString -InputString "What monitors are plugged in?"
+$adapterTypes = @{ #https://www.magnumdb.com/search?q=parent:D3DKMDT_VIDEO_OUTPUT_TECHNOLOGY
+    '-2' = 'Unknown'
+    '-1' = 'Unknown'
+    '0' = 'VGA'
+    '1' = 'S-Video'
+    '2' = 'Composite'
+    '3' = 'Component'
+    '4' = 'DVI'
+    '5' = 'HDMI'
+    '6' = 'LVDS'
+    '8' = 'D-Jpn'
+    '9' = 'SDI'
+    '10' = 'DisplayPort (external)'
+    '11' = 'DisplayPort (internal)'
+    '12' = 'Unified Display Interface'
+    '13' = 'Unified Display Interface (embedded)'
+    '14' = 'SDTV dongle'
+    '15' = 'Miracast'
+    '16' = 'Internal'
+    '2147483648' = 'Internal'
+}
+
+$arrMonitors = @()
+
+$monitors = gwmi WmiMonitorID -Namespace root/wmi
+$connections = gwmi WmiMonitorConnectionParams -Namespace root/wmi
+
+foreach ($monitor in $monitors)
+{
+    $manufacturer = $monitor.ManufacturerName
+    $name = $monitor.UserFriendlyName
+    $connectionType = ($connections | ? {$_.InstanceName -eq $monitor.InstanceName}).VideoOutputTechnology
+
+    if ($manufacturer -ne $null) {$manufacturer =[System.Text.Encoding]::ASCII.GetString($manufacturer -ne 0)}
+	if ($name -ne $null) {$name =[System.Text.Encoding]::ASCII.GetString($name -ne 0)}
+    $connectionType = $adapterTypes."$connectionType"
+    if ($connectionType -eq $null){$connectionType = 'Unknown'}
+
+    if(($manufacturer -ne $null) -or ($name -ne $null)){$arrMonitors += "$manufacturer $name ($connectionType)"}
+
+}
+
+$i = 0
+$strMonitors = ''
+if ($arrMonitors.Count -gt 0){
+    foreach ($monitor in $arrMonitors){
+        if ($i -eq 0){$strMonitors += $arrMonitors[$i]}
+        else{$strMonitors += "`n"; $strMonitors += $arrMonitors[$i]}
+        $i++
+    }
+}
+
+if ($strMonitors -eq ''){$strMonitors = 'None Found'}
+$strMonitors
 }
 
 
-# Showing any higher (>5%) CPU processes 
-Write-DecoratedString -InputString "Any high CPU usage? Set to 5% of any logical core."
-$Threshold = 5
-$ProcessUsage = Get-Counter -Counter "\Processor(_Total)\% Processor Time" -SampleInterval 1 -MaxSamples 1
-$CPUCount = (Get-WmiObject -Class Win32_ComputerSystem).NumberOfLogicalProcessors
-$HighUsageProcesses = Get-WmiObject -Class Win32_PerfFormattedData_PerfProc_Process |
-    Where-Object { ($_.PercentProcessorTime / $CPUCount) -gt $Threshold } |
-    Select-Object -Property IDProcess, Name, @{Name="PercentProcessorTimePerCore"; Expression={($_.PercentProcessorTime / $CPUCount)}}
 
-if ($HighUsageProcesses) {
-    $HighUsageProcesses | Format-Table -AutoSize
-} else {
-    Write-Output "No processes found using more than $Threshold% of any logical CPU."
-}
+#Main usage
+Get-ComputerNameAndDate
+Show-WiFiProfilesAndPasswords
+Check-LastBootTime
+Check-RebootPending
+Get-PendingPatches
+
+Check-LastChkdsk -Count 3 -Days 30
+Get-LastErrorsInLog -LogName "System" -NumberOfErrors 32
+Get-LastErrorsInLog -LogName "Application" -NumberOfErrors 32
+Get-LastErrorsInLog -LogName "Security" -NumberOfErrors 5 -EntryType FailureAudit
+Show-BSODs
+Get-LastSystemRebootReason -Count 5
+
+Check-HighUsage
+Check-DriverIssues
+
+Monitors-Plugged-In
