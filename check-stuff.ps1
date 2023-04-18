@@ -439,6 +439,36 @@ if ($strMonitors -eq ''){$strMonitors = 'None Found'}
 $strMonitors
 }
 
+function RecentlyInstalledPrograms {
+    param (
+        [Parameter(Mandatory = $false)]
+        [int]$NumberOfDays = 7
+    )
+    # Get the current date
+    $currentDate = Get-Date
+    
+    # Calculate the date of a week ago
+    $daysPast = $currentDate.AddDays(-$NumberOfDays)
+    
+    # Get the list of installed programs from the registry
+    $installedPrograms = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* `
+    -ErrorAction SilentlyContinue `
+    | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate
+
+    # Filter the programs installed in the last week
+    $recentlyInstalledPrograms = $installedPrograms | Where-Object {
+    $_.InstallDate -ne $null -and `
+    [datetime]::ParseExact($_.InstallDate, "yyyyMMdd", $null) -ge $daysPast
+    }
+
+    # Display the recently installed programs
+    if ($recentlyInstalledPrograms -ne $null) {
+        Write-Host "Programs installed in the last week:" -ForegroundColor Green
+        $recentlyInstalledPrograms | Format-Table -AutoSize
+    } else {
+        Write-Host "No programs were installed in the last $daysPast days." -ForegroundColor Yellow
+    }
+}
 
 
 #Main usage
@@ -454,6 +484,7 @@ Get-LastErrorsInLog -LogName "Application" -NumberOfErrors 32
 Get-LastErrorsInLog -LogName "Security" -NumberOfErrors 5 -EntryType FailureAudit
 Show-BSODs
 Get-LastSystemRebootReason -Count 5
+RecentlyInstalledPrograms
 
 Check-HighUsage
 Check-DriverIssues

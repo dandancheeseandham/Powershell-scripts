@@ -1,0 +1,40 @@
+# Define an array of registry paths and their corresponding export file names
+$registryPaths = @(
+    @{
+        Path = 'HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\Outlook\'
+        FileName = 'all-outlook16.reg'
+    },
+    @{
+        Path = 'HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\Common\'
+        FileName = 'all-common-settings.reg'
+    },
+    @{
+        Path = 'HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\Common\MailSettings'
+        FileName = 'common-mailsettings.reg'
+    },
+    @{
+        Path = 'HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\Outlook\Profiles'
+        FileName = 'Outlook-Profiles.reg'
+    }
+)
+
+# Define the output folder
+$outputFolder = 'C:\Users\Public\runPCrun'
+
+# Create the output folder if it doesn't exist
+if (-not (Test-Path -Path $outputFolder)) {
+    New-Item -Path $outputFolder -ItemType Directory
+}
+
+# Iterate through the registry paths and export them to the specified files
+foreach ($registryPath in $registryPaths) {
+    $exportFilePath = Join-Path -Path $outputFolder -ChildPath $registryPath.FileName
+
+    # Export the registry key
+    try {
+        reg export $registryPath.Path $exportFilePath /y
+    }
+    catch {
+        Write-Host "Failed to export registry key: $($registryPath.Path)"
+    }
+}
