@@ -1,4 +1,10 @@
-﻿[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+﻿# File     : check-stuff.ps1
+# Effect   : Reports on lots of things on a PC
+# Use-case : Can be used as a first step in remote diagnosis
+# Run As   : Administrator
+# Author   : Dan White
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Write-DecoratedString {
     param (
@@ -94,7 +100,7 @@ function Check-LastChkdsk {
         [int]$Count = 1,
         [int]$Days = 30
     )
-
+    Write-DecoratedString -InputString "Last $Count Chkdsk events in the past $Days days"
     $startDate = (Get-Date).AddDays(-$Days)
 
     try {
@@ -109,7 +115,7 @@ function Check-LastChkdsk {
     }
 
     if ($ChkdskEvents) {
-        Write-DecoratedString -InputString "Last $Count Chkdsk events in the past $Days days"
+        
 
         foreach ($ChkdskEvent in $ChkdskEvents) {
             $eventDetails = @{
@@ -320,7 +326,7 @@ function Check-RebootPending {
         $RebootPending = $true
     }
 
-    if (Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttempts') {
+    if (Test-RegistryKey -Key 'HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttempts' -ErrorAction SilentlyContinue) {
         Write-Output "CurrentRebootAttempts registry key detected."
         $RebootPending = $true
     }
@@ -381,64 +387,6 @@ function Check-HighUsage {
     return $HighUsage
 }
 
-function Monitors-Plugged-In {
-Write-DecoratedString -InputString "What monitors are plugged in?"
-$adapterTypes = @{ #https://www.magnumdb.com/search?q=parent:D3DKMDT_VIDEO_OUTPUT_TECHNOLOGY
-    '-2' = 'Unknown'
-    '-1' = 'Unknown'
-    '0' = 'VGA'
-    '1' = 'S-Video'
-    '2' = 'Composite'
-    '3' = 'Component'
-    '4' = 'DVI'
-    '5' = 'HDMI'
-    '6' = 'LVDS'
-    '8' = 'D-Jpn'
-    '9' = 'SDI'
-    '10' = 'DisplayPort (external)'
-    '11' = 'DisplayPort (internal)'
-    '12' = 'Unified Display Interface'
-    '13' = 'Unified Display Interface (embedded)'
-    '14' = 'SDTV dongle'
-    '15' = 'Miracast'
-    '16' = 'Internal'
-    '2147483648' = 'Internal'
-}
-
-$arrMonitors = @()
-
-$monitors = gwmi WmiMonitorID -Namespace root/wmi
-$connections = gwmi WmiMonitorConnectionParams -Namespace root/wmi
-
-foreach ($monitor in $monitors)
-{
-    $manufacturer = $monitor.ManufacturerName
-    $name = $monitor.UserFriendlyName
-    $connectionType = ($connections | ? {$_.InstanceName -eq $monitor.InstanceName}).VideoOutputTechnology
-
-    if ($manufacturer -ne $null) {$manufacturer =[System.Text.Encoding]::ASCII.GetString($manufacturer -ne 0)}
-	if ($name -ne $null) {$name =[System.Text.Encoding]::ASCII.GetString($name -ne 0)}
-    $connectionType = $adapterTypes."$connectionType"
-    if ($connectionType -eq $null){$connectionType = 'Unknown'}
-
-    if(($manufacturer -ne $null) -or ($name -ne $null)){$arrMonitors += "$manufacturer $name ($connectionType)"}
-
-}
-
-$i = 0
-$strMonitors = ''
-if ($arrMonitors.Count -gt 0){
-    foreach ($monitor in $arrMonitors){
-        if ($i -eq 0){$strMonitors += $arrMonitors[$i]}
-        else{$strMonitors += "`n"; $strMonitors += $arrMonitors[$i]}
-        $i++
-    }
-}
-
-if ($strMonitors -eq ''){$strMonitors = 'None Found'}
-$strMonitors
-}
-
 function RecentlyInstalledPrograms {
     param (
         [Parameter(Mandatory = $false)]
@@ -470,23 +418,70 @@ function RecentlyInstalledPrograms {
     }
 }
 
+function Send-CheckStuffEmail {
+    param (
+        [string]$FilePath = "C:\Users\Public\check-stuff.txt"
+    )
+    # Email settings
+$SMTPServer = "smtp.aa.net.uk"
+$SMTPPort = 587
+$EmailFrom = "support@runmacrun.co.uk"
+$EmailTo = "dan@runpcrun.com"
+$EmailUsername = $EmailFrom
+$EmailPassword = "SurfaceEarshotCaretakerTrimmer"
 
-#Main usage
+# Attachment settings
+$Today = Get-Date -Format "yyyyMMdd"
+$CompName = $env:COMPUTERNAME
+$AttachmentFile = $FilePath
+$sn = Get-WmiObject -Class Win32_BIOS | Select -ExpandProperty SerialNumber
+$usr = Get-WmiObject -Class Win32_ComputerSystem | Select -ExpandProperty UserName
+
+# Email subject and body
+$Subject = "Hostname: $env:computername | User: $usr"
+$Body = "Hostname: $env:computername | Service Tag: $sn | User: $usr"
+
+# Convert password to a secure string
+$SecurePassword = ConvertTo-SecureString $EmailPassword -AsPlainText -Force
+
+# Create a new credential object with the email address and password
+$Credentials = New-Object System.Management.Automation.PSCredential $EmailUsername, $SecurePassword
+
+# Send the email using Send-MailMessage
+Send-MailMessage -SmtpServer $SMTPServer -Credential $Credentials -UseSsl -Port $SMTPPort -From $EmailFrom -To $EmailTo -Subject $Subject -Body $Body -Attachments $AttachmentFile
+}
+
+
+
+# Set the $Transcript variable to control whether the transcript and email features are enabled
+$Transcript = $true
+$transcriptPath = "C:\Users\Public\check-stuff.txt"
+
+# Start the transcript if the $Transcript variable is set to $true
+if ($Transcript) {
+    Start-Transcript -Path $transcriptPath
+}
+
+#Main
 Get-ComputerNameAndDate
 Show-WiFiProfilesAndPasswords
 Check-LastBootTime
 Check-RebootPending
 Get-PendingPatches
+RecentlyInstalledPrograms
 
+Write-DecoratedString -InputString "************** ERROR SECTION **************"
 Check-LastChkdsk -Count 3 -Days 30
 Get-LastErrorsInLog -LogName "System" -NumberOfErrors 32
 Get-LastErrorsInLog -LogName "Application" -NumberOfErrors 32
 Get-LastErrorsInLog -LogName "Security" -NumberOfErrors 5 -EntryType FailureAudit
 Show-BSODs
 Get-LastSystemRebootReason -Count 5
-RecentlyInstalledPrograms
-
-Check-HighUsage
 Check-DriverIssues
+Check-HighUsage
 
-Monitors-Plugged-In
+# Stop the transcript and send the email if the $Transcript variable is set to $true
+if ($Transcript) {
+    Stop-Transcript
+    Send-CheckStuffEmail
+}

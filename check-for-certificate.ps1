@@ -1,4 +1,10 @@
-﻿# Check for the existence of a certificate called "ISRG Root X1" in the "Trusted Root Certification Authorities" store
+﻿# File     : check-stuff.ps1
+# Effect   : Check for the existence of a certificate called "ISRG Root X1" in the "Trusted Root Certification Authorities" store
+# Use-case : Made for https://community.letsencrypt.org/t/email-from-slack-regarding-isrg-root-x1/196186
+#          : Can be used to check for any certificate in the store.
+# Run As   : Administrator
+# Author   : Dan White
+
 
 # Define the certificate store and certificate name
 $storeName = "Root"

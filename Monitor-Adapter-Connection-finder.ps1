@@ -1,4 +1,10 @@
-﻿$adapterTypes = @{ #https://www.magnumdb.com/search?q=parent:D3DKMDT_VIDEO_OUTPUT_TECHNOLOGY
+﻿# File     : Monitor-Adapter-Connection-finder.ps1
+# Effect   : Shows the Monitor model, Video Adapter Name and Connection type used for monitors connected to the PC.
+# Use-case : Useful if you need to know how monitor(s) are plugged in to a PC.
+# Run As   : Administrator
+# Author   : Dan White
+
+$adapterTypes = @{ #https://www.magnumdb.com/search?q=parent:D3DKMDT_VIDEO_OUTPUT_TECHNOLOGY
     '-2' = 'Unknown'
     '-1' = 'Unknown'
     '0' = 'VGA'
