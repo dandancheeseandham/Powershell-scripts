@@ -1,4 +1,10 @@
-﻿function Convert-ExcelToPDF {
+﻿# File     : Convert-ExcelToPDF.ps1
+# Effect   : Rudimentry script to export a folder of Excel documents into PDF's.
+# Use-case : If you need to convert a folder of Excel documents into PDF's, this will do it!
+# Run As   : Current User
+# Author   : Dan White
+
+function Convert-ExcelToPDF {
     param (
         [Parameter(Mandatory=$true)]
         [string]$FolderPath

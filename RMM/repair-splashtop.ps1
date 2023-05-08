@@ -1,4 +1,8 @@
-﻿# Remote deployment script to download and restore Splashtop Streamer
+﻿# File     : repair-splashtop.ps1
+# Effect   : Remote deployment script to download and restore Splashtop Streamer via https://my.splashtop.com/csrs/win
+# Use-case : Where the Atera (or other RMM) is still working, but Splashtop is not, or has been removed.
+# Run As   : Administrator
+# Author   : Dan White
 
 # Function to download the file and return the downloaded file's path
 function Download-File {

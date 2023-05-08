@@ -1,4 +1,8 @@
-# ReprogramKeys.ps1
+# File     : ReprogramKeys.ps1
+# Effect   : Reprograms Hotkeys on an Microsoft Natural Keyboard Pro
+# Use-case : Keeping alive old Microsoft keyboards, including my 22 year old Microsoft Natural Keyboard Pro.
+# Run As   : Administrator
+# Author   : Dan White
 
 # This script requires administrator privileges.
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
