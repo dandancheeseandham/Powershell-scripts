@@ -201,7 +201,8 @@ function Get-LastErrorsInLog {
     $events = Get-EventLog -LogName $LogName -EntryType $EntryType -Newest $NumberOfErrors
 
     if ($events) {
-        $events | Format-Table -AutoSize -Wrap
+        $events | Format-List -Property Index, Time, EntryType, Source, InstanceID, Message
+
     } else {
         Write-Output "No $($EntryType) events found"
     }
