@@ -1,4 +1,4 @@
-#Create .img files for PiKVM in Windows.
+# Create .img files for PiKVM in Windows.
 
 **These scripts and this procedure are not for running on any machine you care about - YOU HAVE BEEN WARNED**
 
