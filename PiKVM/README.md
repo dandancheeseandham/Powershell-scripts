@@ -11,8 +11,8 @@ So only run this on a test rig, or a blank Hyper-V environment.
 You can do the procedure manually by
 
 Downloading
- * Ventoy - https://github.com/ventoy/Ventoy/releases/download/v1.0.91/ventoy-1.0.91-windows.zip
- * Qemu-img - https://cloudbase.it/downloads/qemu-img-win-x64-2_3_0.zip
+ * Ventoy - https://www.ventoy.net/en/download.html
+ * qemu-img for Windows - https://cloudbase.it/qemu-img-windows/
 
 Then:-
 
