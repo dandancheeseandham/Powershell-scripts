@@ -429,7 +429,7 @@ $SMTPPort = 587
 $EmailFrom = "support@runmacrun.co.uk"
 $EmailTo = "dan@runpcrun.com"
 $EmailUsername = $EmailFrom
-$EmailPassword = "SurfaceEarshotCaretakerTrimmer"
+$EmailPassword = ""
 
 # Attachment settings
 $Today = Get-Date -Format "yyyyMMdd"
