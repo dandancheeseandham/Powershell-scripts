@@ -29,6 +29,12 @@ $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocol:', ''
 # Global variable to store processed comments
 $Global:ProcessedCommentsCache = $null
 
+$testMode = $true
+if ($testMode -eq $true) {
+$TicketNumberGPT =  85000
+Write-Host "TEST MODE ON" -ForegroundColor Red
+}
+
 <#
 .SYNOPSIS
 Retrieves configuration data from a JSON file.
@@ -232,7 +238,9 @@ function Process-TextForChatGPT {
      $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
     $CleanText = $InputText
-
+    if ($testMode -eq $true) {
+        Write-Host $CleanText -ForegroundColor Yellow
+        }
     Write-Host "Input sanitized." -ForegroundColor White
 
     # Return the processed text
@@ -492,9 +500,17 @@ function ChatGPTanswersZendesk {
 Process the dataset of email communications by extracting specific details from each email, including the requester and body of the message. It is critically essential and an absolute mandate that all email signatures which includes surnames, position, telephone numbers, addresses, usernames, passwords and disclaimers are rigorously excluded from the dataset. This exclusion is a cornerstone requirement for strict compliance with privacy laws and regulations. Under no circumstances should these elements be included. This directive is of the highest priority and is to be adhered to with utmost diligence. Any oversight or deviation in this regard will be a direct violation of privacy and compliance protocols and is entirely unacceptable. Do not add any explanations or notes about the process or reasons for data exclusion. Remove any references to empty emails. Present the extracted information in a straightforward format without any introductory or concluding remarks. Simply list the details for each email, labeled as 'Email 1', 'Email 2', etc., with the relevant information under each label. 
 '@
         $processedComments = Export-ZendeskTicketComments -TicketNumber $TicketNumber
+        #TEST MODE
+        if ($testMode -eq $true) {
+            Write-Host $processedComments -ForegroundColor Magenta
+        }
         Write-Host "Ticket Exported." -ForegroundColor White
         Write-Host "Preparing for GPT3.5 sanitisation." -ForegroundColor White
         $Global:ProcessedCommentsCache = Process-AndDisplayContent -Comments $processedComments -AdditionalText $sanitiseq -Model "gpt-3.5-turbo-16k"
+        #TEST MODE
+        if ($testMode -eq $true) {
+            Write-Host $Global:ProcessedCommentsCache -ForegroundColor Gray
+        }
     }
 
     # Define the question based on the mode
@@ -515,10 +531,13 @@ Respond to customers ticket -who is the requester- in clear, non-technical langu
     $gptResponse = Process-AndDisplayContent -Comments $Global:ProcessedCommentsCache -AdditionalText $Question -Model "gpt-4-1106-preview"
     $responseTemplate = if ($Mode -eq "customer") { '## Customer answer template (formatted in markdown)' } else { '## Technician notes' }
     $fullResponse = "{JARVIS START`n" + $responseTemplate + "`n`n" + $gptResponse + "`nJARVIS END}"
-    
-    #Write-Host $fullResponse -ForegroundColor Green
+    if ($testMode -eq $true) {
+    Write-Host $fullResponse -ForegroundColor Green
+    }
     Write-Host "Jarvis has an answer." -ForegroundColor Green
-    #Add-ZendeskInternalComment -TicketNumber $TicketNumber -Content $fullResponse
+    If ($testMode = $false) {
+    Add-ZendeskInternalComment -TicketNumber $TicketNumber -Content $fullResponse
+    }
     Write-Host "Jarvis has put in a ticket." -ForegroundColor Green
 }
 
@@ -528,12 +547,14 @@ Write-Host "Processing ticket $TicketNumberGPT" -ForegroundColor Cyan
 # Technician answer: Process as technician answer.
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "technician"
 
-#Uncomment the line below if we start hitting rate limits.
-#Start-Sleep -Seconds 60
+Start-Sleep -Seconds 60
 
 #Customer answer: Process as customer answer.
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
 
 #10 second delay to allow window to be seen. Remove if you want.
-Write-Output "beta version"
 Start-Sleep -Seconds 10
+
+if ($testMode -eq $true) {
+#Read-Host "Press Enter to continue"
+}
