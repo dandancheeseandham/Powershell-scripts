@@ -230,7 +230,7 @@ function Process-TextForChatGPT {
             if ($testMode -eq $true) {
         Write-Host " "
         Write-Host "function Process-TextForChatGPT - after regex before replacements" -BackgroundColor White -ForegroundColor Red
-        Write-Host $InputText -BackgroundColor Blue -ForegroundColor DarkYellow
+        Write-Host $InputText -BackgroundColor Red -ForegroundColor DarkYellow
         Write-Host `n`n
         }
     # Apply string replacements from the CSV file to the input text
@@ -494,7 +494,7 @@ function Process-AndDisplayContent {
     # Construct the ChatGPT prompt
     $gptPrompt = $AdditionalText + "`n" + $jsonTicketContent
     if ($testMode -eq $true) {
-        Write-Host $gptPrompt -BackgroundColor White -ForegroundColor DarkMagenta
+        Write-Host $gptPrompt -BackgroundColor White -ForegroundColor Red
     }
     
     # Send the prompt to ChatGPT and return the response
@@ -522,7 +522,7 @@ function ChatGPTanswersZendesk {
 #'@
         $processedComments = Export-ZendeskTicketComments -TicketNumber $TicketNumber
         Write-Host $processedComments -ForegroundColor Cyan
-        Write-Host (Process-TextForChatGPT -InputText $processedComments) -BackgroundColor DarkRed -ForegroundColor DarkCyan
+        Write-Host (Process-TextForChatGPT -InputText $processedComments) -BackgroundColor White -ForegroundColor DarkCyan
         #TEST MODE
         if ($testMode -eq $true) {
         }
@@ -548,7 +548,7 @@ function ChatGPTanswersZendesk {
     $responseTemplate = if ($Mode -eq "customer") { '## Customer answer template (formatted in markdown)' } else { '## Technician notes' }
     $fullResponse = "{JARVIS START`n" + $responseTemplate + "`n`n" + $gptResponse + "`nJARVIS END}"
     if ($testMode -eq $true) {
-    Write-Host $fullResponse -BackgroundColor DarkYellow -ForegroundColor Green
+    Write-Host $fullResponse -BackgroundColor Black -ForegroundColor Green
     }
     Write-Host "Jarvis has an answer." -ForegroundColor Green
     If ($testMode = $false) {
