@@ -1,0 +1,18 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\chatgptprotocol]
+@="URL:ChatGPT Protocol"
+"URL Protocol"=""
+
+[HKEY_CLASSES_ROOT\chatgptprotocol\DefaultIcon]
+@="C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe,0"
+
+[HKEY_CLASSES_ROOT\chatgptprotocol\shell]
+
+[HKEY_CLASSES_ROOT\chatgptprotocol\shell\open]
+
+[HKEY_CLASSES_ROOT\chatgptprotocol\shell\open\command]
+@="powershell.exe -NoProfile -Execution
+###REMOVE THIS COMMENT ENTIRELY AND JOIN THE TWO LINES###
+Policy Bypass -File \"C:\\scripts\\ChatGPTanswersZendesk\\ChatGPTanswersZendesk.ps1\" -ticketNumber \"%1\""
+

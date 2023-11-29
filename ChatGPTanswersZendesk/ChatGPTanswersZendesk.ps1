@@ -24,12 +24,20 @@ Dan White
 param (
     [Parameter(Mandatory=$true)][string]$ticketNumber
 )
+$testMode = $true
+
+if ($testMode -eq $true) {
+    $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocoltest:', ''
+}
+else
+{
 $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocol:', ''
+}
 
 # Global variable to store processed comments
 $Global:ProcessedCommentsCache = $null
 
-$testMode = $false
+
 
 if ($testMode -eq $true) {
     Write-Host "TEST MODE ON" -BackgroundColor White -ForegroundColor Red
@@ -329,7 +337,7 @@ function Get-ZendeskData {
     try {
         $response = Invoke-WebRequest -Uri $Uri -Headers $Headers
         if ($testMode -eq $true) {
-            Write-Host "function Get-ZendeskData" -BackgroundColor White -ForegroundColor Red -BackgroundColor White -ForegroundColor Red
+            Write-Host "function Get-ZendeskData" -BackgroundColor White -ForegroundColor Red
             Write-Host $response -BackgroundColor Red -ForegroundColor Black
             Write-Host `n`n
         }
@@ -513,10 +521,10 @@ function ChatGPTanswersZendesk {
 #Process the dataset of email communications, extracting details from each email while maintaining strict adherence to privacy laws and compliance protocols. Exclude all email signatures, which include surnames, positions, telephone numbers, addresses, usernames, passwords, and disclaimers. This is a critical mandate to ensure privacy and compliance. Do not include any elements of the signature under any circumstances. Also, remove references to empty emails and avoid adding any explanations or notes about the process or reasons for data exclusion. Format the extracted information by presenting the body of the message followed by the requester's name, separated by a line break, and then a separator line. Do not label the emails numerically or include 'Requester' or 'Body' tags. For internal communications, prepend the text with 'INTERNAL COMMENT:'.
 #'@
         $processedComments = Export-ZendeskTicketComments -TicketNumber $TicketNumber
+        Write-Host $processedComments -ForegroundColor Cyan
+        Write-Host (Process-TextForChatGPT -InputText $processedComments) -BackgroundColor DarkRed -ForegroundColor DarkCyan
         #TEST MODE
         if ($testMode -eq $true) {
-            Write-Host $processedComments -ForegroundColor Cyan
-            Write-Host (Process-TextForChatGPT -InputText $processedComments) -BackgroundColor DarkRed -ForegroundColor DarkCyan
         }
         Write-Host "Ticket Exported." -ForegroundColor White
         Write-Host "Preparing for GPT3.5 sanitisation." -ForegroundColor White
@@ -534,19 +542,13 @@ function ChatGPTanswersZendesk {
     } else { 
         Get-Prompt -Tag "Prompt_Customer"
     }
-    <#
-    $question = if ($Mode -eq "technician") { @'
-Provide concise internal guidance in a mentor role for the IT support technicians addressing this issue. Offer clear, actionable advice and troubleshooting steps, format in Markdown (do not answer within a codeblock) for quick reference. Assume technician competence and that they have knowledge of the customer’s IT infrastructure and our standard procedures, so only detail complicated or unusual tasks. Short lists of best practice steps or highlighting potential problems during any procedure is encouraged. Include relevant insights or considerations based on the customer’s known environment. Refer to our RMM tool, Atera where necessary to get tasks done, and you can recommend practical PowerShell scripts (within a markdown codeblock but do not specify Powershell after the backticks) when appropriate to diagnose or resolve issues. Refer to ITGlue for documentation, and gently remind technicians to document any changes to infrastructure where appropriate. Conclude with a brief 'Harvest Notes field:' entry that encapsulates the main goal or action of the ticket without referring to the tools used or the customer company for efficient time tracking and management. Commence with ticket support direction.
-'@} else { @'
-Respond to customers ticket -who is the requester- in clear, non-technical language. You are well-acquainted with the customers technical setup and preferences. Provide solutions that are thorough yet explained in an accessible manner, avoiding technical jargon. Offer responses that are concise, informative, and tailored to the customer’s understanding, ensuring all communication is easy to grasp while still capturing all necessary details for the task. Use all the information but only respond to the latest comments - do not write responses to previous emails. Format in Markdown if appropriate.Do not ever claim to be a person and do not use a signature. Proceed with customer-focused ticket resolution.
-'@
-    }#>
+
     Write-Host "Submitting $Mode question to Jarvis." -ForegroundColor Red
-    #$gptResponse = Process-AndDisplayContent -Comments $Global:ProcessedCommentsCache -AdditionalText $Question -Model "gpt-4-1106-preview"
+    $gptResponse = Process-AndDisplayContent -Comments $Global:ProcessedCommentsCache -AdditionalText $Question -Model "gpt-4-1106-preview"
     $responseTemplate = if ($Mode -eq "customer") { '## Customer answer template (formatted in markdown)' } else { '## Technician notes' }
     $fullResponse = "{JARVIS START`n" + $responseTemplate + "`n`n" + $gptResponse + "`nJARVIS END}"
     if ($testMode -eq $true) {
-    Write-Host $fullResponse -ForegroundColor Green
+    Write-Host $fullResponse -BackgroundColor DarkYellow -ForegroundColor Green
     }
     Write-Host "Jarvis has an answer." -ForegroundColor Green
     If ($testMode = $false) {
@@ -567,7 +569,7 @@ if ($testMode -eq $false) {
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
 
 #10 second delay to allow window to be seen. Remove if you want.
-Start-Sleep -Seconds 10
+Start-Sleep -Seconds 900
 }
 
 if ($testMode -eq $true) {
