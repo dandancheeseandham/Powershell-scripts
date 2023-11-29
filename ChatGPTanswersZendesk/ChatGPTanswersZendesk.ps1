@@ -30,10 +30,12 @@ $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocol:', ''
 $Global:ProcessedCommentsCache = $null
 
 $testMode = $true
-if ($testMode -eq $true) {
-$TicketNumberGPT =  85000
+<#if ($testMode -eq $true) {
+$TicketNumberGPT =  86470
 Write-Host "TEST MODE ON" -ForegroundColor Red
 }
+#>
+
 
 <#
 .SYNOPSIS
@@ -141,17 +143,6 @@ function Send-ToChatGPT {
     $messages = @(
         @{
             "role" = "system"
-            "content" = "You are Jarvis, an extremely skilled and adept IT support expert for SMEs. With your comprehensive IT knowledge, problem-solving, certifications, and communication skills, tackle the tickets in the directed manner. If you are referred to directly as Jarvis in an internal ticket body, please answer the query as if you were asked directly as a primary question."
-        },
-        @{
-            "role" = "user"
-            "content" = $prompt
-        }
-    )
-    <#
-    $messages = @(
-        @{
-            "role" = "system"
             "content" = $systemMessageContent
         },
         @{
@@ -159,7 +150,7 @@ function Send-ToChatGPT {
             "content" = $prompt
         }
     )
-    #>
+    
     # Convert the message and other parameters into a JSON-formatted body.
     $body = @{
         "model" = $model
@@ -220,27 +211,32 @@ function Process-TextForChatGPT {
     $InputText = [regex]::Replace($InputText, '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '')
 
     # Remove "Attachments:" line with filenames
-    $InputText = [regex]::Replace($InputText, 'Attachments:([^\r\n]+)', '')
+    #$InputText = [regex]::Replace($InputText, 'Attachments:([^\r\n]+)', '')
 
     # Remove any strings of repeating text that are more than 30 characters
     $InputText = [regex]::Replace($InputText, '(\b\w{30,}\b)(?:\s+\1\b)+', '$1')
-
+    
     # Apply string replacements from the CSV file to the input text
     foreach ($replacement in $Replacements) {
         $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
-
+    
     # Clean the input text by replacing multiple spaces with a single space and removing non-alphanumeric characters
     $InputText = $InputText -replace '\s+', ' ' -replace '[^a-zA-Z0-9\s.,!?]', ''
 
+    
     # Apply string replacements again in case any new matches are found after cleaning
     foreach ($replacement in $Replacements) {
      $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
+    
+
+
     $CleanText = $InputText
     if ($testMode -eq $true) {
         Write-Host $CleanText -ForegroundColor Yellow
         }
+    
     Write-Host "Input sanitized." -ForegroundColor White
 
     # Return the processed text
@@ -389,6 +385,23 @@ function Export-ZendeskTicketComments {
         $commentType = if ($Comment.public) { "Public" } else { "Internal" }
         $body = $Comment.body
 
+        #sort out staff members
+        $authorId = $Comment.author_id
+        $userExists = $Users.ContainsKey($authorId)
+        Write-Host "Processing author_id: $authorId, Exists in user map: $userExists"
+
+        $authorId = $Comment.author_id
+        $userExists = $Users.ContainsKey($authorId)
+        Write-Host "Processing author_id: $authorId, Exists in user map: $userExists"
+        
+        if ($userExists) {
+            $from = $Users[$authorId].name
+        } else {
+            $from = "MISSING_USER_$authorId"  # Temporary placeholder for debugging
+        }
+
+
+
         # Create a list of attachments for the comment.
         $attachmentList = @()
         foreach ($attachment in $Comment.attachments) {
@@ -475,7 +488,7 @@ function Process-AndDisplayContent {
 
     # Construct the ChatGPT prompt
     $gptPrompt = $AdditionalText + "`n" + $jsonTicketContent
-    Write-Host $gptPrompt
+    Write-Host $gptPrompt -BackgroundColor White -ForegroundColor DarkMagenta
     # Send the prompt to ChatGPT and return the response
     return Send-ToChatGPT -prompt $gptPrompt -model $Model
 }
@@ -495,40 +508,40 @@ function ChatGPTanswersZendesk {
     )
     if (-not $Global:ProcessedCommentsCache) {
                 # Retrieve and process the ticket comments if not already done
-        #$sanitiseq = Get-Prompt -Tag "Prompt_Sanitise"
-        $sanitiseq = @'
-Process the dataset of email communications by extracting specific details from each email, including the requester and body of the message. It is critically essential and an absolute mandate that all email signatures which includes surnames, position, telephone numbers, addresses, usernames, passwords and disclaimers are rigorously excluded from the dataset. This exclusion is a cornerstone requirement for strict compliance with privacy laws and regulations. Under no circumstances should these elements be included. This directive is of the highest priority and is to be adhered to with utmost diligence. Any oversight or deviation in this regard will be a direct violation of privacy and compliance protocols and is entirely unacceptable. Do not add any explanations or notes about the process or reasons for data exclusion. Remove any references to empty emails. Present the extracted information in a straightforward format without any introductory or concluding remarks. Simply list the details for each email, labeled as 'Email 1', 'Email 2', etc., with the relevant information under each label. 
-'@
+        $sanitiseq = Get-Prompt -Tag "Prompt_Sanitise"
+#        $sanitiseq = @'
+#Process the dataset of email communications, extracting details from each email while maintaining strict adherence to privacy laws and compliance protocols. Exclude all email signatures, which include surnames, positions, telephone numbers, addresses, usernames, passwords, and disclaimers. This is a critical mandate to ensure privacy and compliance. Do not include any elements of the signature under any circumstances. Also, remove references to empty emails and avoid adding any explanations or notes about the process or reasons for data exclusion. Format the extracted information by presenting the body of the message followed by the requester's name, separated by a line break, and then a separator line. Do not label the emails numerically or include 'Requester' or 'Body' tags. For internal communications, prepend the text with 'INTERNAL COMMENT:'.
+#'@
         $processedComments = Export-ZendeskTicketComments -TicketNumber $TicketNumber
         #TEST MODE
         if ($testMode -eq $true) {
-            Write-Host $processedComments -ForegroundColor Magenta
+            Write-Host $processedComments -ForegroundColor Cyan
         }
         Write-Host "Ticket Exported." -ForegroundColor White
         Write-Host "Preparing for GPT3.5 sanitisation." -ForegroundColor White
         $Global:ProcessedCommentsCache = Process-AndDisplayContent -Comments $processedComments -AdditionalText $sanitiseq -Model "gpt-3.5-turbo-16k"
         #TEST MODE
         if ($testMode -eq $true) {
-            Write-Host $Global:ProcessedCommentsCache -ForegroundColor Gray
+            Write-Host $Global:ProcessedCommentsCache -ForegroundColor Magenta
         }
     }
 
     # Define the question based on the mode
-    <#
+    
     $question = if ($Mode -eq "technician") { 
         Get-Prompt -Tag "Prompt_Technician"
     } else { 
         Get-Prompt -Tag "Prompt_Customer"
     }
-    #>
+    <#
     $question = if ($Mode -eq "technician") { @'
 Provide concise internal guidance in a mentor role for the IT support technicians addressing this issue. Offer clear, actionable advice and troubleshooting steps, format in Markdown (do not answer within a codeblock) for quick reference. Assume technician competence and that they have knowledge of the customer’s IT infrastructure and our standard procedures, so only detail complicated or unusual tasks. Short lists of best practice steps or highlighting potential problems during any procedure is encouraged. Include relevant insights or considerations based on the customer’s known environment. Refer to our RMM tool, Atera where necessary to get tasks done, and you can recommend practical PowerShell scripts (within a markdown codeblock but do not specify Powershell after the backticks) when appropriate to diagnose or resolve issues. Refer to ITGlue for documentation, and gently remind technicians to document any changes to infrastructure where appropriate. Conclude with a brief 'Harvest Notes field:' entry that encapsulates the main goal or action of the ticket without referring to the tools used or the customer company for efficient time tracking and management. Commence with ticket support direction.
 '@} else { @'
 Respond to customers ticket -who is the requester- in clear, non-technical language. You are well-acquainted with the customers technical setup and preferences. Provide solutions that are thorough yet explained in an accessible manner, avoiding technical jargon. Offer responses that are concise, informative, and tailored to the customer’s understanding, ensuring all communication is easy to grasp while still capturing all necessary details for the task. Use all the information but only respond to the latest comments - do not write responses to previous emails. Format in Markdown if appropriate.Do not ever claim to be a person and do not use a signature. Proceed with customer-focused ticket resolution.
 '@
-    }
+    }#>
     Write-Host "Submitting $Mode question to Jarvis." -ForegroundColor Red
-    $gptResponse = Process-AndDisplayContent -Comments $Global:ProcessedCommentsCache -AdditionalText $Question -Model "gpt-4-1106-preview"
+    #$gptResponse = Process-AndDisplayContent -Comments $Global:ProcessedCommentsCache -AdditionalText $Question -Model "gpt-4-1106-preview"
     $responseTemplate = if ($Mode -eq "customer") { '## Customer answer template (formatted in markdown)' } else { '## Technician notes' }
     $fullResponse = "{JARVIS START`n" + $responseTemplate + "`n`n" + $gptResponse + "`nJARVIS END}"
     if ($testMode -eq $true) {
@@ -548,12 +561,13 @@ Write-Host "Processing ticket $TicketNumberGPT" -ForegroundColor Cyan
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "technician"
 
 Start-Sleep -Seconds 60
-
+if ($testMode -eq $false) {
 #Customer answer: Process as customer answer.
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
 
 #10 second delay to allow window to be seen. Remove if you want.
 Start-Sleep -Seconds 10
+}
 
 if ($testMode -eq $true) {
 #Read-Host "Press Enter to continue"
