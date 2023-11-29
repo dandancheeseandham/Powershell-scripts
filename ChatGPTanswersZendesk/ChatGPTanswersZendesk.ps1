@@ -29,12 +29,12 @@ $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocol:', ''
 # Global variable to store processed comments
 $Global:ProcessedCommentsCache = $null
 
-$testMode = $true
-<#if ($testMode -eq $true) {
-$TicketNumberGPT =  86470
-Write-Host "TEST MODE ON" -ForegroundColor Red
+$testMode = $false
+
+if ($testMode -eq $true) {
+    Write-Host "TEST MODE ON" -BackgroundColor White -ForegroundColor Red
 }
-#>
+
 
 
 <#
@@ -192,7 +192,11 @@ function Process-TextForChatGPT {
     param(
         [string]$InputText
     )
-
+        if ($testMode -eq $true) {
+        Write-Host "function Process-TextForChatGPT - before regex before replacements" -BackgroundColor White -ForegroundColor Red
+        Write-Host $InputText -ForegroundColor DarkYellow
+        Write-Host `n`n
+        }
     # Import simple replacement rules from a CSV file located in the same directory as the script
     $Replacements = Import-Csv (Join-Path $PSScriptRoot "replacements.csv")
 
@@ -215,14 +219,19 @@ function Process-TextForChatGPT {
 
     # Remove any strings of repeating text that are more than 30 characters
     $InputText = [regex]::Replace($InputText, '(\b\w{30,}\b)(?:\s+\1\b)+', '$1')
-    
+            if ($testMode -eq $true) {
+        Write-Host " "
+        Write-Host "function Process-TextForChatGPT - after regex before replacements" -BackgroundColor White -ForegroundColor Red
+        Write-Host $InputText -BackgroundColor Blue -ForegroundColor DarkYellow
+        Write-Host `n`n
+        }
     # Apply string replacements from the CSV file to the input text
     foreach ($replacement in $Replacements) {
         $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
     
     # Clean the input text by replacing multiple spaces with a single space and removing non-alphanumeric characters
-    $InputText = $InputText -replace '\s+', ' ' -replace '[^a-zA-Z0-9\s.,!?]', ''
+    $InputText = $InputText -replace '\s+', ' ' -replace '[^a-zA-Z0-9\s.,!?/:=()<>-]', ''
 
     
     # Apply string replacements again in case any new matches are found after cleaning
@@ -230,10 +239,9 @@ function Process-TextForChatGPT {
      $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
     
-
-
     $CleanText = $InputText
     if ($testMode -eq $true) {
+        Write-Host "function Process-TextForChatGPT - after regex after replacements - return from function" -BackgroundColor White -ForegroundColor Red
         Write-Host $CleanText -ForegroundColor Yellow
         }
     
@@ -320,6 +328,12 @@ function Get-ZendeskData {
     )
     try {
         $response = Invoke-WebRequest -Uri $Uri -Headers $Headers
+        if ($testMode -eq $true) {
+            Write-Host "function Get-ZendeskData" -BackgroundColor White -ForegroundColor Red -BackgroundColor White -ForegroundColor Red
+            Write-Host $response -BackgroundColor Red -ForegroundColor Black
+            Write-Host `n`n
+        }
+        
         return $response.Content | ConvertFrom-Json
     } catch {
         Write-Log "Error fetching data from Zendesk: $_"
@@ -375,8 +389,7 @@ function Export-ZendeskTicketComments {
         param (
             $Comment,
             $Users,
-            $Signatures,
-            $Attachments
+            $Signatures            
         )
 
         # Extract and format comment details.
@@ -399,28 +412,12 @@ function Export-ZendeskTicketComments {
         } else {
             $from = "MISSING_USER_$authorId"  # Temporary placeholder for debugging
         }
-
-
-
-        # Create a list of attachments for the comment.
-        $attachmentList = @()
-        foreach ($attachment in $Comment.attachments) {
-            if ($Attachments.ContainsKey($attachment.id)) {
-                $attachmentList += $Attachments[$attachment.id].file_name
-            } else {
-                $Attachments.Add($attachment.id, $attachment)
-                $attachmentList += $attachment.file_name
-            }
-        }
-        $attachmentText = if ($attachmentList) { $attachmentList -join ', ' } else { "" }
-
         # Format and return the processed comment.
         @"
 From: $from
 Date: $date
 Type: $commentType
 Body: $body
-Attachments: $attachmentText
 "@
     }
 
@@ -436,13 +433,13 @@ Attachments: $attachmentText
 
     $commentsData = Get-ZendeskData -Uri "$baseUrl/tickets/$TicketNumber/comments.json?include=users" -Headers $headers
     $comments = $commentsData.comments
-    $attachments = @{}
+
 
     # Initialize an array to hold the processed comments.
    $processedComments = @("Requester: $($users[$ticket.requester_id].name)", "Assignee: $(if ($ticket.assignee_id) { $users[$ticket.assignee_id].name } else { 'Not assigned' })", "Ticket Subject: $($ticket.subject)")
 
     foreach ($comment in $comments) {
-        $processedComment = Process-Comment -Comment $comment -Users $users -Attachments $attachments
+        $processedComment = Process-Comment -Comment $comment -Users $users
         $processedComments += $processedComment
         $processedComments += "----"
     }
@@ -488,7 +485,10 @@ function Process-AndDisplayContent {
 
     # Construct the ChatGPT prompt
     $gptPrompt = $AdditionalText + "`n" + $jsonTicketContent
-    Write-Host $gptPrompt -BackgroundColor White -ForegroundColor DarkMagenta
+    if ($testMode -eq $true) {
+        Write-Host $gptPrompt -BackgroundColor White -ForegroundColor DarkMagenta
+    }
+    
     # Send the prompt to ChatGPT and return the response
     return Send-ToChatGPT -prompt $gptPrompt -model $Model
 }
@@ -516,6 +516,7 @@ function ChatGPTanswersZendesk {
         #TEST MODE
         if ($testMode -eq $true) {
             Write-Host $processedComments -ForegroundColor Cyan
+            Write-Host (Process-TextForChatGPT -InputText $processedComments) -BackgroundColor DarkRed -ForegroundColor DarkCyan
         }
         Write-Host "Ticket Exported." -ForegroundColor White
         Write-Host "Preparing for GPT3.5 sanitisation." -ForegroundColor White
