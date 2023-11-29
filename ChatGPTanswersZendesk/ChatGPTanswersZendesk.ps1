@@ -18,7 +18,7 @@ Run the script with mandatory parameters like ticket number. Parameters can be p
 Dan White
 
 .LAST MODIFIED
-13:04 23/11/2023
+13 23/11/2023
 #>
 
 param (
@@ -29,47 +29,89 @@ $TicketNumberGPT = $ticketNumber -replace 'chatgptprotocol:', ''
 # Global variable to store processed comments
 $Global:ProcessedCommentsCache = $null
 
+<#
+.SYNOPSIS
+Retrieves configuration data from a JSON file.
+.DESCRIPTION
+This function reads a JSON formatted configuration file located in the same directory as the script and converts it into a PowerShell object. 
+It's typically used to manage settings and credentials in a centralized and easily accessible manner.
+.EXAMPLE
+$config = Get-ConfigData
+.NOTES
+The configuration file is named 'config.json' and should be located in the same directory as the script. Ensure that the file is properly formatted as valid JSON.
+#>
 function Get-ConfigData {
+    # Define the path to the configuration file relative to the script location
     $Path = "$PSScriptRoot\config.json"
+
+    # Read the configuration file and convert its content from JSON to a PowerShell object
     return Get-Content -Path $Path -Raw | ConvertFrom-Json
 }
 
-function Write-Log {
-    param([string]$Message)
-    Add-Content -Path "C:\Users\Public\LogFile.log" -Value "$(Get-Date) - $Message"
-}
-
-function Write-ConditionalHostMessage {
-    param(
-        [Parameter(Mandatory = $true)]
-        $VariableToCheck,
-
-        [Parameter(Mandatory = $true)]
-        [string]$MessageIfNotEmpty,
-
-        [Parameter(Mandatory = $true)]
-        [string]$MessageIfEmpty,
-
-        [Parameter(Mandatory = $true)]
-        [System.ConsoleColor]$ForegroundColor
+function Get-Prompt {
+    param (
+        [string]$Tag
     )
+    
+    $allPrompts = Get-Content -Path "$PSScriptRoot\prompts.txt" -Raw
+    # Updated regex pattern
+    $pattern = "\[$Tag\](.*?)(?=\[Prompt_|\[System_|\z)"
+    $matches = [regex]::Matches($allPrompts, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
-    if (![string]::IsNullOrEmpty($VariableToCheck)) {
-        Write-Host $MessageIfNotEmpty -ForegroundColor $ForegroundColor
+    if ($matches.Count -gt 0) {
+        return $matches[0].Groups[1].Value.Trim()
     } else {
-        Write-Host $MessageIfEmpty -ForegroundColor $ForegroundColor
+        Write-Error "Prompt not found for tag: $Tag"
+        return $null
     }
 }
 
+<#
+.SYNOPSIS
+Writes a log message to a log file and displays an error message.
+.DESCRIPTION
+This function appends a provided message to a log file with a timestamp. It also outputs the message as an error in the console. 
+The log file is stored at a specified path on the system.
+.PARAMETER Message
+The message to be logged.
+.EXAMPLE
+Write-Log "An error occurred while processing data."
+.NOTES
+The log file is located at "C:\Users\Public\LogFile.log". Ensure that the script has write permissions to this path.
+#>
+function Write-Log {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
 
+    # Define the path for the log file.
+    $logFilePath = "C:\Users\Public\LogFile.log"
+
+    # Append the message with a timestamp to the log file.
+    Add-Content -Path $logFilePath -Value "$(Get-Date) - $Message"
+
+    # Output the message as an error to the console.
+    Write-Error $Message
+}
+
+<#
+.SYNOPSIS
+Sends a prompt to the ChatGPT API and retrieves the response.
+.DESCRIPTION
+This function sends a user-defined prompt to the ChatGPT API and outputs the response from the assistant. 
+It requires an API key obtained from a configuration file and handles the construction and execution of the API request. 
+Error handling is included to manage potential request failures.
+.PARAMETER prompt
+The text prompt to be sent to the ChatGPT API.
+.PARAMETER model
+Specifies the ChatGPT model to be used. If not provided, a default value is used.
+.EXAMPLE
+$response = Send-ToChatGPT -prompt "How do I reset a router?" -model "gpt-3.5-turbo"
+.NOTES
+Ensure that the OpenAI API key is correctly configured in the configuration file.
+#>
 function Send-ToChatGPT {
-    <#
-    This function is designed to send a prompt to the ChatGPT API and output the response. 
-    It includes error handling and requires an API key from a configuration file.
-    #>
-
-    # Define parameters for the function.
-    # 'prompt' is a mandatory string parameter with an alias 'p'.
     Param(
         [Parameter(Mandatory=$true, HelpMessage='prompt:')]
         [Alias('p')]
@@ -80,7 +122,6 @@ function Send-ToChatGPT {
     # Configuration for the API request.
     $temperature = 0.5
     $maxTokens = 4096
-
     # Retrieve the API key from the configuration data.
     $config = Get-ConfigData
     $apiKey = $config.OpenAI.ApiKey
@@ -90,9 +131,7 @@ function Send-ToChatGPT {
         "Content-Type" = "application/json"
         "Authorization" = "Bearer $apiKey"
     }
-    
-    # Define the body of the message to send to the ChatGPT API.
-    # Includes a system message setting the context and a user message containing the prompt.
+    $systemMessageContent = Get-Prompt -Tag "System_Jarvis"
     $messages = @(
         @{
             "role" = "system"
@@ -103,8 +142,19 @@ function Send-ToChatGPT {
             "content" = $prompt
         }
     )
-
-    # Convert the message and other parameters into a JSON-formatted body for the API request.
+    <#
+    $messages = @(
+        @{
+            "role" = "system"
+            "content" = $systemMessageContent
+        },
+        @{
+            "role" = "user"
+            "content" = $prompt
+        }
+    )
+    #>
+    # Convert the message and other parameters into a JSON-formatted body.
     $body = @{
         "model" = $model
         "messages" = $messages
@@ -128,26 +178,34 @@ function Send-ToChatGPT {
     }
 }
 
-
-
+<#
+.SYNOPSIS
+Processes text to prepare it for input to ChatGPT.
+.DESCRIPTION
+This function performs a series of text processing steps including regex replacements and string substitutions to clean and format the input text. 
+It is designed to remove unwanted elements like specific date formats, email addresses, phone numbers, and more, making the text more suitable for processing by ChatGPT.
+.PARAMETER InputText
+The text to be processed.
+.EXAMPLE
+$processedText = Process-TextForChatGPT -InputText $rawText
+.NOTES
+Ensure that the replacements.csv file is properly formatted and located in the same directory as the script.
+#>
 function Process-TextForChatGPT {
     param(
         [string]$InputText
     )
 
-    # Import simple replacement rules from a CSV file
+    # Import simple replacement rules from a CSV file located in the same directory as the script
     $Replacements = Import-Csv (Join-Path $PSScriptRoot "replacements.csv")
-    #Write-Host $Replacements -ForegroundColor Cyan
 
+    # Regular expressions for specific text patterns removal
     # Remove all data between {JARVIS START and JARVIS END}
     $InputText = [regex]::Replace($InputText, '\{JARVIS START.*?JARVIS END\}', '', [System.Text.RegularExpressions.RegexOptions]::Singleline)
     
     # Remove instances of the date in the format "Date: YYYY-MM-DDTHH:MM:SSZ"
     $InputText = [regex]::Replace($InputText, 'Date:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', '')
 
-    # Replace hyperlinks with just the domain name
-    #$InputText = [regex]::Replace($InputText, '(http|https)://(www\.)?([^/\s]+)', '$2$3')
-    
     # Remove UK phone numbers (with and without the optional "(0)")
     $InputText = [regex]::Replace($InputText, '\+44\s*\(\s*0\s*\)\s*\d{4}\s*\d{6}', '')
     $InputText = [regex]::Replace($InputText, '\+44\s*\d{4}\s*\d{6}', '')
@@ -161,97 +219,143 @@ function Process-TextForChatGPT {
     # Remove any strings of repeating text that are more than 30 characters
     $InputText = [regex]::Replace($InputText, '(\b\w{30,}\b)(?:\s+\1\b)+', '$1')
 
-    # Apply string replacements to the input text
+    # Apply string replacements from the CSV file to the input text
     foreach ($replacement in $Replacements) {
         $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
 
-    # Clean the input text (adjust regex as needed)
+    # Clean the input text by replacing multiple spaces with a single space and removing non-alphanumeric characters
     $InputText = $InputText -replace '\s+', ' ' -replace '[^a-zA-Z0-9\s.,!?]', ''
 
-    # Apply string replacements to the input text - second pass
+    # Apply string replacements again in case any new matches are found after cleaning
     foreach ($replacement in $Replacements) {
      $InputText = $InputText.Replace($replacement.old, $replacement.new)
     }
     $CleanText = $InputText
-    Write-Host "Input sanitised." -ForegroundColor White
+
+    Write-Host "Input sanitized." -ForegroundColor White
+
     # Return the processed text
     return $CleanText.Trim()
 }
 
-
-function Add-ZendeskInternalCommentWithAttachment {
+<#
+.SYNOPSIS
+Adds an internal comment to a Zendesk ticket.
+.DESCRIPTION
+This function adds an internal comment to a specified Zendesk ticket. It constructs a comment body and sends it to the Zendesk API. 
+The function handles the authentication and submission process.
+.PARAMETER TicketNumber
+The number of the Zendesk ticket to which the comment will be added.
+.PARAMETER Content
+The content of the comment to be added to the ticket.
+.EXAMPLE
+Add-ZendeskInternalComment -TicketNumber 12345 -Content "This is an internal comment."
+.NOTES
+Ensure that the Zendesk API credentials are properly configured before using this function.
+#>
+function Add-ZendeskInternalComment {
     param (
         [Parameter(Mandatory=$true)][int]$TicketNumber,
-        [Parameter()][string]$Content,
-        [Parameter()][string]$AttachmentFilePath,
-        [Parameter()][bool]$AsAttachment = $false
+        [Parameter(Mandatory=$true)][string]$Content
     )
 
+    # Retrieve configuration data for Zendesk API.
     $config = Get-ConfigData
     $baseUrl = "https://$($config.Zendesk.Subdomain).zendesk.com/api/v2"
     $authInfo = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("$($config.Zendesk.Email)/token`:$($config.Zendesk.ApiToken)"))
 
-    if ($AsAttachment -and $AttachmentFilePath) {
-        $attachmentHeaders = @{
-            "Authorization" = "Basic $authInfo"
-            "Content-Type" = "application/binary"
-        }
-        $attachmentResponse = Invoke-WebRequest -Uri "$baseUrl/uploads.json?filename=$([System.IO.Path]::GetFileName($AttachmentFilePath))" -Method Post -InFile $AttachmentFilePath -Headers $attachmentHeaders
-
-        if ($attachmentResponse.StatusCode -eq 201) {
-            $attachmentContent = $attachmentResponse.Content | ConvertFrom-Json
-            $attachmentToken = $attachmentContent.upload.token
-        } else {
-            Write-Error "Failed to upload the attachment. Status code: $($attachmentResponse.StatusCode)"
-            return
-        }
-    }
-
-    # Construct the comment body.
+    # Construct the JSON body for the comment.
     $comment = @{
         ticket = @{
             comment = @{
                 body = $Content
-                public = $false
+                public = $false  # Indicates an internal comment
             }
         }
     }
 
-    # Add attachment token if there's an attachment.
-    if ($AsAttachment -and $AttachmentFilePath) {
-        $comment.ticket.comment.uploads = @($attachmentToken)
-    }
-
-    # Convert the comment to JSON.
+    # Convert the comment to JSON string.
     $commentJson = ConvertTo-Json -InputObject $comment -Depth 5
 
+    # Set up headers for the API request.
     $commentHeaders = @{
-        "Authorization" = "Basic $authInfo"
-        "Content-Type" = "application/json"
+        "Authorization" = "Basic $authInfo"  # Authentication header
+        "Content-Type" = "application/json"  # Content type header
     }
 
     try {
+        # Send the comment to Zendesk API.
         $commentResponse = Invoke-WebRequest -Uri "$baseUrl/tickets/$TicketNumber.json" -Method Put -Body $commentJson -Headers $commentHeaders
         if ($commentResponse.StatusCode -eq 200) {
-            Write-Output "Internal comment successfully added to ticket #$TicketNumber"
+            Write-Host "Internal comment successfully added to ticket #$TicketNumber"
         } else {
-            Write-Error "Failed to add internal comment. Status code: $($commentResponse.StatusCode)"
+            Write-Log "Failed to add internal comment. Status code: $($commentResponse.StatusCode)"
         }
-     } catch {
-        Write-Output "An error occurred while adding internal comment."
-     }
+    } catch {
+        Write-Output "An error occurred while adding internal comment: $_"
+    }
 }
 
+<#
+.SYNOPSIS
+Fetches data from a specified Zendesk API endpoint.
+.DESCRIPTION
+This function sends a request to a Zendesk API endpoint and returns the response data. It handles errors and returns null if the request fails.
+.PARAMETER Uri
+The API endpoint URI to send the request to.
+.PARAMETER Headers
+Headers to be used for the API request, typically including authorization and content type.
+.EXAMPLE
+$data = Get-ZendeskData -Uri "https://example.zendesk.com/api/v2/tickets/123.json" -Headers $headers
+#>
+function Get-ZendeskData {
+    param (
+        [string]$Uri,
+        [hashtable]$Headers
+    )
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -Headers $Headers
+        return $response.Content | ConvertFrom-Json
+    } catch {
+        Write-Log "Error fetching data from Zendesk: $_"
+        return $null
+    }
+}
 
+<#
+.SYNOPSIS
+Maps user IDs to user objects.
+.DESCRIPTION
+Given an array of user objects, this function creates a hashtable mapping user IDs to their corresponding user objects for quick lookup.
+.PARAMETER Users
+An array of user objects, typically obtained from a Zendesk API response.
+.EXAMPLE
+$users = Map-Users -Users $userArray
+#>
+function Map-Users {
+    param (
+        [object[]]$Users
+    )
+    $userMap = @{}
+    foreach ($user in $Users) {
+        $userMap[$user.id] = $user
+    }
+    return $userMap
+}
+
+<#
+.SYNOPSIS
+Exports comments from a specific Zendesk ticket.
+.DESCRIPTION
+This function retrieves comments from a specified Zendesk ticket using the Zendesk API. It processes each comment and formats them for export. 
+The function handles the retrieval of ticket details, user information, and comment processing.
+.PARAMETER TicketNumber
+The number of the Zendesk ticket from which to export comments.
+.EXAMPLE
+$comments = Export-ZendeskTicketComments -TicketNumber 12345
+#>
 function Export-ZendeskTicketComments {
-    <#
-    This function exports comments from a specific Zendesk ticket to a text file. 
-    It uses the Zendesk API to fetch ticket details and comments, processes each comment, and formats them for export. 
-    The nested Process-Comment function handles the individual comment processing, including formatting and attachment handling. 
-    The main function sets up the necessary API request details, retrieves ticket and user information, and writes the processed comments to an output file.
-    #>
-
     # Define a mandatory parameter for the Zendesk ticket number.
     param (
         [Parameter(Mandatory=$true)][int]$TicketNumber
@@ -305,45 +409,41 @@ Attachments: $attachmentText
         "Content-Type" = "application/json"
     }
 
-    # Retrieve ticket and related data from Zendesk.
-    $ticketResponse = Invoke-WebRequest -Uri "$baseUrl/tickets/$TicketNumber.json?include=users,organizations" -Headers $headers
-    $ticket = ($ticketResponse.Content | ConvertFrom-Json).ticket
-    $users = @{}
+        $ticketData = Get-ZendeskData -Uri "$baseUrl/tickets/$TicketNumber.json?include=users,organizations" -Headers $headers
+    $ticket = $ticketData.ticket
+    $users = Map-Users -Users $ticketData.users
 
-    # Map user data for easy reference.
-    foreach ($user in ($ticketResponse.Content | ConvertFrom-Json).users) {
-        $users.Add($user.id, $user)
-    }
-
-    # Retrieve comments for the ticket.
-    $commentsResponse = Invoke-WebRequest -Uri "$baseUrl/tickets/$TicketNumber/comments.json?include=users" -Headers $headers
-    $comments = ($commentsResponse.Content | ConvertFrom-Json).comments
-
-    # Initialize an empty hashtable for attachments.
+    $commentsData = Get-ZendeskData -Uri "$baseUrl/tickets/$TicketNumber/comments.json?include=users" -Headers $headers
+    $comments = $commentsData.comments
     $attachments = @{}
 
     # Initialize an array to hold the processed comments.
-    $processedComments = @()
+   $processedComments = @("Requester: $($users[$ticket.requester_id].name)", "Assignee: $(if ($ticket.assignee_id) { $users[$ticket.assignee_id].name } else { 'Not assigned' })", "Ticket Subject: $($ticket.subject)")
 
-    # Add the header to the processed comments.
-    $header = @"
-Requester: $($users[$ticket.requester_id].name)
-Assignee: $(if ($ticket.assignee_id -ne $null) { $users[$ticket.assignee_id].name } else { "Not assigned" })
-Ticket Subject: $($ticket.subject)
-"@
-    $processedComments += $header
-
-    # Process and add each comment to the processed comments array.
     foreach ($comment in $comments) {
-        $processedComment = Process-Comment -Comment $comment -Users $users -Signatures $signatures -Attachments $attachments
+        $processedComment = Process-Comment -Comment $comment -Users $users -Attachments $attachments
         $processedComments += $processedComment
         $processedComments += "----"
     }
 
-    # Return the array of processed comments.
-    return $processedComments
+    return $processedComments -join "`n"
 }
 
+<#
+.SYNOPSIS
+Processes and displays ticket comments for input to ChatGPT.
+.DESCRIPTION
+This function takes ticket comments, processes them for formatting and cleaning, and then constructs a prompt for ChatGPT. 
+It displays the processing status and returns the response from ChatGPT.
+.PARAMETER Comments
+An array of comments to be processed and sent to ChatGPT.
+.PARAMETER AdditionalText
+Additional text to prepend to the processed comments when constructing the ChatGPT prompt.
+.PARAMETER Model
+Specifies the ChatGPT model to be used. If not provided, defaults to the model used in Send-ToChatGPT function.
+.EXAMPLE
+$response = Process-AndDisplayContent -Comments $commentsArray -AdditionalText "Please analyze these comments:" -Model "gpt-3.5-turbo"
+#>
 function Process-AndDisplayContent {
     param (
         [Parameter(Mandatory=$true)][array]$Comments,
@@ -351,40 +451,43 @@ function Process-AndDisplayContent {
         [string]$Model
     )
 
+    # Join comments into a single string
     $joinedContent = $Comments -join "`n"
-    #Write-Host $joinedContent -ForegroundColor Red
     
     Write-Host "GPT pre-processing started for $Model" -ForegroundColor Yellow
+    
+    # Process the content for ChatGPT
     $processedContent = Process-TextForChatGPT -InputText $joinedContent
-    #Write-Host $processedContent -ForegroundColor Yellow
+    
     Write-Host "GPT pre-processing finished for $Model" -ForegroundColor Yellow
 
+    # Create a JSON object from the processed content
     $ticketObject = @{ content = $processedContent }
     $jsonTicketContent = $ticketObject | ConvertTo-Json -Compress
-    #Write-Host $jsonTicketContent -ForegroundColor White
 
-
+    # Construct the ChatGPT prompt
     $gptPrompt = $AdditionalText + "`n" + $jsonTicketContent
+    Write-Host $gptPrompt
+    # Send the prompt to ChatGPT and return the response
     return Send-ToChatGPT -prompt $gptPrompt -model $Model
 }
 
-function ChatGPTanswersZendesk {
-    <#
+<#
     This function integrates ChatGPT with Zendesk ticketing. 
     It exports Zendesk ticket comments, sanitizes the content, and reduces it to a manageable size for ChatGPT. 
     The function then creates a prompt for ChatGPT using the sanitized content and a user-provided question. 
     The response from ChatGPT is formatted based on the specified mode and outputted to a file. 
     The function can also optionally add the response as an internal comment in Zendesk.
     #>
-
+function ChatGPTanswersZendesk {
     # Define mandatory parameters: the question to ask, the Zendesk ticket number, and the mode (technician/customer).
     param (
         [Parameter(Mandatory=$true)][int]$TicketNumber,
         [Parameter(Mandatory=$true)][ValidateSet("technician", "customer")][string]$Mode
     )
-
     if (-not $Global:ProcessedCommentsCache) {
                 # Retrieve and process the ticket comments if not already done
+        #$sanitiseq = Get-Prompt -Tag "Prompt_Sanitise"
         $sanitiseq = @'
 Process the dataset of email communications by extracting specific details from each email, including the requester and body of the message. It is critically essential and an absolute mandate that all email signatures which includes surnames, position, telephone numbers, addresses, usernames, passwords and disclaimers are rigorously excluded from the dataset. This exclusion is a cornerstone requirement for strict compliance with privacy laws and regulations. Under no circumstances should these elements be included. This directive is of the highest priority and is to be adhered to with utmost diligence. Any oversight or deviation in this regard will be a direct violation of privacy and compliance protocols and is entirely unacceptable. Do not add any explanations or notes about the process or reasons for data exclusion. Remove any references to empty emails. Present the extracted information in a straightforward format without any introductory or concluding remarks. Simply list the details for each email, labeled as 'Email 1', 'Email 2', etc., with the relevant information under each label. 
 '@
@@ -395,6 +498,13 @@ Process the dataset of email communications by extracting specific details from 
     }
 
     # Define the question based on the mode
+    <#
+    $question = if ($Mode -eq "technician") { 
+        Get-Prompt -Tag "Prompt_Technician"
+    } else { 
+        Get-Prompt -Tag "Prompt_Customer"
+    }
+    #>
     $question = if ($Mode -eq "technician") { @'
 Provide concise internal guidance in a mentor role for the IT support technicians addressing this issue. Offer clear, actionable advice and troubleshooting steps, format in Markdown (do not answer within a codeblock) for quick reference. Assume technician competence and that they have knowledge of the customer’s IT infrastructure and our standard procedures, so only detail complicated or unusual tasks. Short lists of best practice steps or highlighting potential problems during any procedure is encouraged. Include relevant insights or considerations based on the customer’s known environment. Refer to our RMM tool, Atera where necessary to get tasks done, and you can recommend practical PowerShell scripts (within a markdown codeblock but do not specify Powershell after the backticks) when appropriate to diagnose or resolve issues. Refer to ITGlue for documentation, and gently remind technicians to document any changes to infrastructure where appropriate. Conclude with a brief 'Harvest Notes field:' entry that encapsulates the main goal or action of the ticket without referring to the tools used or the customer company for efficient time tracking and management. Commence with ticket support direction.
 '@} else { @'
@@ -408,12 +518,13 @@ Respond to customers ticket -who is the requester- in clear, non-technical langu
     
     #Write-Host $fullResponse -ForegroundColor Green
     Write-Host "Jarvis has an answer." -ForegroundColor Green
-    Add-ZendeskInternalCommentWithAttachment -TicketNumber $TicketNumber -Content $fullResponse -AsAttachment $false
+    #Add-ZendeskInternalComment -TicketNumber $TicketNumber -Content $fullResponse
     Write-Host "Jarvis has put in a ticket." -ForegroundColor Green
 }
 
 cls
 Write-Host "Processing ticket $TicketNumberGPT" -ForegroundColor Cyan
+
 # Technician answer: Process as technician answer.
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "technician"
 
@@ -424,4 +535,5 @@ ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "technician"
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
 
 #10 second delay to allow window to be seen. Remove if you want.
+Write-Output "beta version"
 Start-Sleep -Seconds 10
