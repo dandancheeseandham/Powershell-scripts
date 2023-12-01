@@ -317,6 +317,32 @@ function Add-ZendeskInternalComment {
     }
 }
 
+
+function DisplayComment {
+    param (
+        [Parameter(Mandatory=$true)][int]$TicketNumber,
+        [Parameter(Mandatory=$true)][string]$Content
+    )
+
+    try {
+        # Create the filename with TicketNumber_GUID format
+        $fileName = "$TicketNumber`_" + [System.Guid]::NewGuid().ToString() + ".txt"
+        $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), $fileName)
+
+        # Write the content to the temporary file
+        Set-Content -Path $tempFile -Value $Content
+
+        # Open the file in Notepad
+        Start-Process notepad.exe -ArgumentList $tempFile
+
+    } catch {
+        Write-Output "An error occurred: $_"
+    }
+}
+
+
+
+
 <#
 .SYNOPSIS
 Fetches data from a specified Zendesk API endpoint.
@@ -338,7 +364,7 @@ function Get-ZendeskData {
         $response = Invoke-WebRequest -Uri $Uri -Headers $Headers
         if ($testMode -eq $true) {
             Write-Host "function Get-ZendeskData" -BackgroundColor White -ForegroundColor Red
-            Write-Host $response -BackgroundColor Red -ForegroundColor Black
+            Write-Host $response -BackgroundColor DarkRed -ForegroundColor White
             Write-Host `n`n
         }
         
@@ -551,6 +577,7 @@ function ChatGPTanswersZendesk {
     Write-Host $fullResponse -BackgroundColor Black -ForegroundColor Green
     }
     Write-Host "Jarvis has an answer." -ForegroundColor Green
+    DisplayComment -TicketNumber $TicketNumber -Content $fullResponse
     If ($testMode = $false) {
     Add-ZendeskInternalComment -TicketNumber $TicketNumber -Content $fullResponse
     }
@@ -562,16 +589,17 @@ Write-Host "Processing ticket $TicketNumberGPT" -ForegroundColor Cyan
 
 # Technician answer: Process as technician answer.
 ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "technician"
-
 Start-Sleep -Seconds 60
+ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
+
+
 if ($testMode -eq $false) {
 #Customer answer: Process as customer answer.
-ChatGPTanswersZendesk -TicketNumber $TicketNumberGPT -mode "customer"
 
 #10 second delay to allow window to be seen. Remove if you want.
 Start-Sleep -Seconds 900
 }
 
 if ($testMode -eq $true) {
-#Read-Host "Press Enter to continue"
+Read-Host "Press Enter to continue"
 }
